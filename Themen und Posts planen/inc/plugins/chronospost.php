@@ -225,7 +225,48 @@ function chronospost_publish_posts()
         update_thread_data($tid); 
         rebuild_forum_counters($thread['fid']);
         $db->write_query("UPDATE ".TABLE_PREFIX."users SET postnum = postnum + 1 WHERE uid = '{$uid}'");
+// =========================================================================
+// INTEGRATION: Discord Webhooks Plugin manuell auslösen
+// =========================================================================
+if (file_exists(MYBB_ROOT . 'inc/plugins/discord_webhooks/DiscordWebhook.php')) 
+{
+    require_once MYBB_ROOT . 'inc/plugins/discord_webhooks/DiscordWebhook.php';
 
+    if (class_exists('DiscordWebhook')) 
+    {
+        // Wir benötigen die vollständigen Beitrags- und Themendaten.
+        // $thread wird bereits weiter oben in der Funktion geholt.
+        $post = get_post($pid);
+
+        // Erstelle ein "simuliertes" Objekt, das dem von MyBBs DataHandler
+        // ähnelt, welches das Discord-Plugin erwartet.
+        $mock_entry = new stdClass();
+        $mock_entry->return_values = ['visible' => 1, 'tid' => $tid, 'pid' => $pid];
+        $mock_entry->data = ['fid' => $thread['fid']];
+
+        // Die Benutzer- und Beitragsdaten holen wir aus dem $post-Array
+        $mock_entry->post_insert_data = [
+            'uid'       => $post['uid'],
+            'username'  => $post['username'],
+            'subject'   => $post['subject'],
+            'message'   => $post['message']
+        ];
+
+        if ($scheduled_post['type'] == 'thread') 
+        {
+            // Bei einem neuen Thema braucht die Discord-Funktion auch den Thementitel
+            $mock_entry->thread_insert_data = ['subject' => $thread['subject']];
+            DiscordWebhook::newThread($mock_entry);
+        } 
+        else // Es ist eine Antwort (reply)
+        {
+            DiscordWebhook::newPost($mock_entry);
+        }
+    }
+}
+// =========================================================================
+// ENDE INTEGRATION
+// =========================================================================
         $db->delete_query("chronospost_schedule", "sid = '{$scheduled_post['sid']}'");
     }
 }
